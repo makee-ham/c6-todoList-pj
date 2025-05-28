@@ -1,7 +1,10 @@
-import { useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+// npm run server 후 엔드포인트 확인...
+import { useEffect, useState, useRef } from "react";
 import { getRegExp } from "korean-regexp";
-import Clock from "./components/Clock";
+import Header from "./components/Header";
+import { SearchFilter } from "./components/SearchFilter";
+import { TodoList } from "./components/TodoList";
+import { AddTodo } from "./components/AddTodo";
 import Quote from "./components/Quote";
 
 function App() {
@@ -11,27 +14,51 @@ function App() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const newTodoRef = useRef(null);
-  const navigate = useNavigate();
 
-  const handleAddTodo = () => {
+  useEffect(() => {
+    fetch("http://localhost:4000/todos")
+      .then((res) => res.json())
+      .then((data) => setTodos(data))
+      .catch((err) => console.error("Failed to fetch todos", err));
+  }, []);
+
+  const handleAddTodo = async () => {
     const value = newTodoRef.current.value;
     if (!value.trim()) {
       alert("Please write something to do, then add it.");
       return;
     }
-    setTodos([
-      ...todos,
-      { id: Date.now(), text: value.trim(), completed: false },
-    ]);
-    newTodoRef.current.value = "";
+    const newTodo = { text: value.trim(), completed: false };
+    try {
+      const res = await fetch("http://localhost:4000/todos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newTodo),
+      });
+      const savedTodo = await res.json();
+      setTodos((prev) => [...prev, savedTodo]);
+      newTodoRef.current.value = "";
+    } catch (error) {
+      console.error("Failed to add todo", error);
+    }
   };
 
-  const handleComplete = (id) => {
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id ? { ...todo, completed: !todo.completed } : todo
-      )
-    );
+  const handleComplete = async (id) => {
+    const target = todos.find((todo) => todo.id === id);
+    if (!target) return;
+    try {
+      const res = await fetch(`http://localhost:4000/todos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: !target.completed }),
+      });
+      const updatedTodo = await res.json();
+      setTodos((prev) =>
+        prev.map((todo) => (todo.id === id ? updatedTodo : todo))
+      );
+    } catch (err) {
+      console.error("Failed to toggle complete", err);
+    }
   };
 
   const handleEdit = (id, currentText) => {
@@ -39,20 +66,37 @@ function App() {
     setEditText(currentText);
   };
 
-  const handleEditSave = (id) => {
+  const handleEditSave = async (id) => {
     if (!editText.trim()) {
       alert("Please renewal your task content, then apply it.");
       return;
     }
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id ? { ...todo, text: editText.trim() } : todo
-      )
-    );
-    setEditingId(null);
+    try {
+      const res = await fetch(`http://localhost:4000/todos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: editText.trim() }),
+      });
+      const updatedTodo = await res.json();
+      setTodos((prev) =>
+        prev.map((todo) => (todo.id === id ? updatedTodo : todo))
+      );
+      setEditingId(null);
+    } catch (err) {
+      console.error("Failed to edit todo", err);
+    }
   };
 
-  const handleDelete = (id) => setTodos(todos.filter((todo) => todo.id !== id));
+  const handleDelete = async (id) => {
+    try {
+      await fetch(`http://localhost:4000/todos/${id}`, {
+        method: "DELETE",
+      });
+      setTodos((prev) => prev.filter((todo) => todo.id !== id));
+    } catch (err) {
+      console.error("Failed to delete todo", err);
+    }
+  };
 
   const filteredTodos = todos
     .filter((todo) => {
@@ -67,134 +111,26 @@ function App() {
 
   return (
     <>
-      {/* Header */}
-      <header className="bg-white shadow-sm py-6">
-        <h1
-          className="text-center text-3xl font-bold text-blue-600 cursor-pointer"
-          onClick={() => navigate(0)}
-        >
-          📝 Todo List
-        </h1>
-        <div className="flex justify-center">
-          {/* Clock */}
-          <Clock />
-        </div>
-      </header>
-
-      {/* Main */}
+      <Header />
       <main className="bg-blue-50 min-h-screen text-gray-800">
         <div className="max-w-2xl mx-auto py-10 px-6 space-y-10">
-          {/* Search & Filter */}
-          <div className="bg-white p-4 rounded shadow space-y-4">
-            <div className="relative">
-              <span className="absolute left-3 top-2.5 text-gray-400">
-                <svg
-                  viewBox="0 0 15 15"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                >
-                  <path
-                    d="M14.5 14.5l-4-4m-4 2a6 6 0 110-12 6 6 0 010 12z"
-                    stroke="currentColor"
-                  ></path>
-                </svg>
-              </span>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search todos..."
-                className="w-full pl-10 pr-3 py-2 border border-blue-100 rounded focus:outline-none focus:ring focus:ring-blue-200"
-              />
-            </div>
-
-            <div className="flex gap-2 justify-center">
-              {["all", "complete", "uncomplete"].map((status) => (
-                <button
-                  key={status}
-                  onClick={() => setFilterStatus(status)}
-                  className={`px-4 py-1 rounded transition
-          ${
-            filterStatus === status
-              ? "bg-blue-500 text-white"
-              : "bg-blue-100 text-blue-600 hover:bg-blue-200"
-          }`}
-                >
-                  {status[0].toUpperCase() + status.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Todo List */}
-          <ul className="space-y-3">
-            {filteredTodos.map((todo) => (
-              <li
-                key={todo.id}
-                className="flex items-center justify-between bg-white p-4 rounded shadow"
-              >
-                <div className="flex items-center gap-3 w-full">
-                  <input
-                    type="checkbox"
-                    checked={todo.completed}
-                    onChange={() => handleComplete(todo.id)}
-                    className="w-5 h-5 text-blue-500"
-                  />
-                  {editingId === todo.id ? (
-                    <input
-                      autoFocus
-                      value={editText}
-                      onChange={(e) => setEditText(e.target.value)}
-                      onBlur={() => handleEditSave(todo.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleEditSave(todo.id);
-                      }}
-                      className="flex-1 px-2 py-1 border-b border-blue-200 focus:outline-none"
-                    />
-                  ) : (
-                    <span
-                      className={`flex-1 ${todo.completed ? "line-through text-gray-400" : ""}`}
-                    >
-                      {todo.text}
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleEdit(todo.id, todo.text)}
-                    className="text-sm text-blue-500 hover:underline"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(todo.id)}
-                    className="text-sm text-red-500 hover:underline"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {/* Add New Todo */}
-          <div className="flex gap-2 bg-white p-4 rounded shadow">
-            <input
-              ref={newTodoRef}
-              placeholder="New task..."
-              className="flex-1 px-3 py-2 border border-blue-100 rounded focus:outline-none focus:ring focus:ring-blue-200"
-            />
-            <button
-              onClick={handleAddTodo}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Add
-            </button>
-          </div>
-
-          {/* Quote */}
+          <SearchFilter
+            search={search}
+            setSearch={setSearch}
+            filterStatus={filterStatus}
+            setFilterStatus={setFilterStatus}
+          />
+          <TodoList
+            filteredTodos={filteredTodos}
+            editingId={editingId}
+            editText={editText}
+            handleEdit={handleEdit}
+            handleEditSave={handleEditSave}
+            handleComplete={handleComplete}
+            handleDelete={handleDelete}
+            setEditText={setEditText}
+          />
+          <AddTodo newTodoRef={newTodoRef} handleAddTodo={handleAddTodo} />
           <Quote />
         </div>
       </main>
